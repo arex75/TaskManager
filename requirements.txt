@@ -1,10 +1,10 @@
 Django==5.2.1
 djangorestframework==3.16.0
 django-environ==0.12.0
+python-dotenv==1.1.1
 psycopg2-binary==2.9.10
 pillow==11.2.1
 django-cors-headers==4.7.0
-python-dotenv==1.1.0
 ipython==9.2.0
 drf-nested-routers==0.94.2
 drf-spectacular==0.28.0
@@ -15,6 +15,9 @@ requests-oauthlib==2.0.0
 gevent==25.5.1
 pyjwt==2.9.0
 django-filter==25.1
+django-allauth==65.10.0
+dj-rest-auth==7.0.1
+cryptography==45.0.6
 
 # Test dependencies
 pytest==8.0.0
