@@ -25,21 +25,16 @@ class EmailServiceTest(BaseTestCase):
     """Test cases for EmailService"""
     
     def setUp(self):
-        print("🔍 Setting up EmailServiceTest...")
         super().setUp()
-        print("🔍 BaseTestCase setup completed")
         
         self.factory = RequestFactory()
-        print("🔍 RequestFactory created")
         
         try:
             self.site = Site.objects.create(
                 name='Test Site',
                 domain='testserver.com'
             )
-            print(f"🔍 Site created successfully: {self.site}")
         except Exception as e:
-            print(f"🔍 Error creating site: {e}")
             raise
         
         # Create a test user
@@ -48,24 +43,19 @@ class EmailServiceTest(BaseTestCase):
                 email='test@example.com',
                 username='testuser'
             )
-            print(f"🔍 User created successfully: {self.user}")
         except Exception as e:
-            print(f"🔍 Error creating user: {e}")
             raise
         
         # Create a mock request
         self.request = self.factory.get('/')
         self.request.site = self.site
-        print("🔍 Mock request created with site")
         
         # Update SITE_ID to use our test site
         from django.conf import settings
         settings.SITE_ID = self.site.id
-        print(f"🔍 Updated SITE_ID to: {settings.SITE_ID}")
         
         # Create email templates for testing
         self.create_test_templates()
-        print("🔍 Test templates created")
     
     def create_test_templates(self):
         """Create test email templates"""
