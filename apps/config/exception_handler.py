@@ -49,6 +49,10 @@ def custom_exception_handler(exc, context):
             status_code = response.status_code
             data = response.data
             
+            # Debug logging to see what DRF is passing
+            logger.debug(f"DRF response data: {data}")
+            logger.debug(f"DRF response data type: {type(data)}")
+            
             # Map DRF exception codes to our error codes
             if hasattr(exc, 'default_code'):
                 error_code = _map_drf_error_code(exc.default_code)
@@ -174,6 +178,10 @@ def _extract_drf_error_info(data):
     error_message = "An error occurred."
     error_details = None
     
+    # Debug logging
+    logger.debug(f"Extracting error info from: {data}")
+    logger.debug(f"Data type: {type(data)}")
+    
     if isinstance(data, dict):
         if 'detail' in data and isinstance(data['detail'], (str, ErrorDetail)):
             error_message = str(data['detail'])
@@ -183,10 +191,13 @@ def _extract_drf_error_info(data):
             for field, errors in data.items():
                 if isinstance(errors, list):
                     for error in errors:
-                        error_messages.append(f"{field}: {error}")
+                        # Clean up double-wrapped error messages
+                        clean_error = str(error)
+                        if clean_error.startswith("['") and clean_error.endswith("']"):
+                            clean_error = clean_error[2:-2]  # Remove [' and ']
+                        error_messages.append(f"{field}: {clean_error}")
                 else:
                     error_messages.append(f"{field}: {errors}")
-            
             if error_messages:
                 error_message = "Validation failed: " + "; ".join(error_messages)
             else:
@@ -194,7 +205,11 @@ def _extract_drf_error_info(data):
             error_details = data
             
     elif isinstance(data, list):
-        error_message = "; ".join(map(str, data))
+        # Handle single-item lists properly
+        if len(data) == 1:
+            error_message = str(data[0])
+        else:
+            error_message = "; ".join(map(str, data))
         error_details = data
         
     elif isinstance(data, (str, ErrorDetail)):
