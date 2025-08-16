@@ -35,6 +35,17 @@ class CustomUserManager(models.Manager):
             raise ValueError('Superuser must have is_superuser=True.')
         
         return self.create_user(username, email, password, **extra_fields)
+    
+    def get_by_natural_key(self, username):
+        """Get user by natural key (username) - case sensitive"""
+        return self.get(username=username)
+    
+    def get(self, **kwargs):
+        """Override get to make username lookup case sensitive"""
+        if 'username' in kwargs:
+            # Use exact lookup for case-sensitive username matching
+            return super().get(username__exact=kwargs['username'])
+        return super().get(**kwargs)
 
 class CustomUser(BaseModel):
     # Authentication fields
@@ -65,6 +76,7 @@ class CustomUser(BaseModel):
     password_reset_token = models.UUIDField(null=True, blank=True, editable=False)
     password_reset_token_expiration = models.DateTimeField(null=True, blank=True)
     email_verification_token = models.UUIDField(null=True, blank=True, editable=False)
+    email_verification_token_expiration = models.DateTimeField(null=True, blank=True)
     email_change_token = models.UUIDField(null=True, blank=True, editable=False)
     email_change_token_expiration = models.DateTimeField(null=True, blank=True)
     
@@ -140,8 +152,9 @@ class CustomUser(BaseModel):
         self.save()
 
     def generate_email_verification_token(self):
-        """Generate a new email verification token"""
+        """Generate a new email verification token with expiration"""
         self.email_verification_token = uuid.uuid4()
+        self.email_verification_token_expiration = timezone.now() + timezone.timedelta(hours=24)
         self.save()
 
     def generate_email_change_token(self):
@@ -161,6 +174,12 @@ class CustomUser(BaseModel):
         if not self.email_change_token_expiration:
             return True
         return timezone.now() > self.email_change_token_expiration
+
+    def is_email_verification_token_expired(self):
+        """Check if email verification token is expired"""
+        if not self.email_verification_token_expiration:
+            return True
+        return timezone.now() > self.email_verification_token_expiration
 
     def soft_delete(self, deleted_by_user=None):
         """Soft delete the user instead of hard deletion"""
@@ -213,6 +232,10 @@ class CustomUser(BaseModel):
         if self.is_password_reset_token_expired():
             self.password_reset_token = None
             self.password_reset_token_expiration = None
+        
+        if self.is_email_verification_token_expired():
+            self.email_verification_token = None
+            self.email_verification_token_expiration = None
         
         if self.is_email_change_token_expired():
             self.email_change_token = None
