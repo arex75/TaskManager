@@ -14,7 +14,8 @@ from .serializers import (
     SubtaskSerializer, SubtaskCreateSerializer, SubtaskUpdateSerializer,
     CommentSerializer, CommentCreateSerializer, CommentUpdateSerializer,
     AttachmentSerializer, AttachmentCreateSerializer, AttachmentUpdateSerializer,
-    TaskDetailSerializer, TaskDashboardSerializer, UserTaskSummarySerializer
+    TaskDetailSerializer, TaskDashboardSerializer, UserTaskSummarySerializer,
+    SubtaskDetailSerializer
 )
 from .services import (
     TaskService, SubtaskService, CommentService, 
