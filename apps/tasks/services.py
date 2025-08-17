@@ -1,10 +1,11 @@
 from django.utils import timezone
 from django.db.models import Q, Avg, Count
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ValidationError
 from datetime import timedelta
 import logging
 
-from .models import Task, Subtask, Comment, Attachment, Tag
+from .models import Task, Subtask, Comment, Attachment, Tag, TaskStatus, TaskPriority
 
 logger = logging.getLogger(__name__)
 
@@ -13,25 +14,113 @@ class TaskService:
     """Service for handling task-related business logic"""
     
     @staticmethod
-    def get_user_tasks(user, include_public=True):
+    def get_user_tasks(user, include_public=True, **kwargs):
         """
         Get tasks accessible to a user
         
         Args:
             user: The user requesting tasks
             include_public: Whether to include public tasks
+            **kwargs: Additional filter parameters
             
         Returns:
             QuerySet of accessible tasks
         """
+        logger.debug(f"get_user_tasks called with user={user}, include_public={include_public}, kwargs={kwargs}")
+        
+        if user is None:
+            logger.error("get_user_tasks called with None user")
+            raise ValueError("User cannot be None")
+        
         if user.is_staff or user.is_superuser:
-            return Task.objects.all()
+            logger.debug("User is staff/superuser, returning all tasks")
+            queryset = Task.objects.all()
+        else:
+            logger.debug("User is regular user, filtering by ownership/assignment")
+            query = Q(owner=user) | Q(assigned_to=user)
+            if include_public:
+                # Only include tasks that are explicitly marked as public
+                # For now, we'll assume all tasks are private unless marked otherwise
+                # This can be enhanced later with a public field in the Task model
+                pass
+            
+            queryset = Task.objects.filter(query).distinct()
         
-        query = Q(owner=user) | Q(assigned_to=user)
-        if include_public:
-            query |= Q(owner__isnull=False)  # Include public tasks
+        # Apply additional filters from kwargs
+        if kwargs:
+            logger.debug(f"Applying additional filters: {kwargs}")
+            # Handle special parameters
+            page = kwargs.pop('page', None)
+            page_size = kwargs.pop('page_size', None)
+            ordering = kwargs.pop('ordering', None)
+            search = kwargs.pop('search', None)
+            include_comments = kwargs.pop('include_comments', False)
+            include_subtasks = kwargs.pop('include_subtasks', False)
+            include_attachments = kwargs.pop('include_attachments', False)
+            tags = kwargs.pop('tags', None)
+            
+            # Apply field filters
+            for key, value in kwargs.items():
+                if hasattr(Task, key.split('__')[0]):  # Check if field exists
+                    logger.debug(f"Applying filter {key}={value}")
+                    
+                    # Validate enum fields
+                    if key == 'status' and hasattr(TaskStatus, 'choices'):
+                        valid_statuses = [choice[0] for choice in TaskStatus.choices]
+                        if value not in valid_statuses:
+                            raise ValidationError(f"'{value}' is not a valid status. Valid choices are: {valid_statuses}")
+                    
+                    elif key == 'priority' and hasattr(TaskPriority, 'choices'):
+                        valid_priorities = [choice[0] for choice in TaskPriority.choices]
+                        if value not in valid_priorities:
+                            raise ValidationError(f"'{value}' is not a valid priority. Valid choices are: {valid_priorities}")
+                    
+                    queryset = queryset.filter(**{key: value})
+                else:
+                    logger.warning(f"Unknown filter field: {key}")
+            
+            # Apply tags filter
+            if tags:
+                logger.debug(f"Applying tags filter: {tags}")
+                if isinstance(tags, list):
+                    # Filter by multiple tags - task must have ALL specified tags
+                    for tag in tags:
+                        queryset = queryset.filter(tags=tag)
+                else:
+                    queryset = queryset.filter(tags=tags)
+            
+            # Apply search
+            if search:
+                logger.debug(f"Applying search filter: {search}")
+                queryset = queryset.filter(
+                    Q(title__icontains=search) | 
+                    Q(description__icontains=search)
+                )
+            
+            # Apply ordering
+            if ordering:
+                logger.debug(f"Applying ordering: {ordering}")
+                # Clear default ordering and apply custom ordering
+                queryset = queryset.order_by().order_by(ordering)
+            
+            # Apply pagination
+            if page_size:
+                logger.debug(f"Applying pagination: page_size={page_size}")
+                if page:
+                    logger.debug(f"Applying pagination: page={page}")
+                    start = (page - 1) * page_size
+                    end = start + page_size
+                    queryset = queryset[start:end]
+                else:
+                    queryset = queryset[:page_size]
+            
+            # Apply select_related for performance
+            if include_comments or include_subtasks or include_attachments:
+                logger.debug("Applying select_related for related data")
+                queryset = queryset.select_related('owner', 'assigned_to')
         
-        return Task.objects.filter(query).distinct()
+        logger.debug(f"Final queryset count: {queryset.count()}")
+        return queryset
     
     @staticmethod
     def get_overdue_tasks(user):
@@ -66,7 +155,7 @@ class TaskService:
     @staticmethod
     def start_task(task, user):
         """Start a task"""
-        if task.status == Task.TaskStatus.TODO:
+        if task.status == TaskStatus.TODO:
             task.start_task()
             logger.info(f"Task {task.id} started by user {user.id}")
             return True
@@ -75,7 +164,7 @@ class TaskService:
     @staticmethod
     def complete_task(task, user):
         """Complete a task"""
-        if not task.completed:
+        if not task.completed and task.started_at is not None:
             task.complete_task()
             logger.info(f"Task {task.id} completed by user {user.id}")
             return True
@@ -84,7 +173,7 @@ class TaskService:
     @staticmethod
     def cancel_task(task, user):
         """Cancel a task"""
-        if task.status != Task.TaskStatus.CANCELLED:
+        if task.status != TaskStatus.CANCELLED:
             task.cancel_task(cancelled_by_user=user)
             logger.info(f"Task {task.id} cancelled by user {user.id}")
             return True
@@ -93,11 +182,51 @@ class TaskService:
     @staticmethod
     def update_task_progress(task, progress, user):
         """Update task progress"""
+        # Convert progress to integer if it's a string
+        try:
+            progress = int(progress)
+        except (ValueError, TypeError):
+            return False
+        
         if 0 <= progress <= 100:
             task.update_progress(progress)
             logger.info(f"Task {task.id} progress updated to {progress}% by user {user.id}")
             return True
         return False
+    
+    @staticmethod
+    def pause_task(task, user):
+        """Pause a task"""
+        if task.status == TaskStatus.IN_PROGRESS:
+            task.status = TaskStatus.PAUSED
+            task.save()
+            logger.info(f"Task {task.id} paused by user {user.id}")
+            return True
+        return False
+    
+    @staticmethod
+    def resume_task(task, user):
+        """Resume a task"""
+        if task.status == TaskStatus.PAUSED:
+            task.status = TaskStatus.IN_PROGRESS
+            task.save()
+            logger.info(f"Task {task.id} resumed by user {user.id}")
+            return True
+        return False
+    
+    @staticmethod
+    def assign_task(task, assignee_id, user):
+        """Assign a task to a user"""
+        try:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            assignee = User.objects.get(id=assignee_id)
+            task.assigned_to = assignee
+            task.save()
+            logger.info(f"Task {task.id} assigned to user {assignee_id} by user {user.id}")
+            return True
+        except User.DoesNotExist:
+            return False
     
     @staticmethod
     def get_user_task_summary(user):
