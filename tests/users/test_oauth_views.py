@@ -129,15 +129,8 @@ class OAuthURLViewTest(BaseAPITestCase):
         super().setUp()
         self.url = reverse('users:oauth_url', kwargs={'provider': 'google'})
     
-    @patch('django.conf.settings.SOCIALACCOUNT_PROVIDERS')
-    def test_oauth_url_google_success(self, mock_providers):
+    def test_oauth_url_google_success(self):
         """Test successful Google OAuth URL generation"""
-        # Mock the settings
-        mock_providers.__getitem__.return_value = {
-            'APP_ID': 'test-google-client-id',
-            'SCOPE': ['openid', 'email', 'profile']
-        }
-        
         response = self.client.get(self.url)
         
         # Assert success response
@@ -148,15 +141,8 @@ class OAuthURLViewTest(BaseAPITestCase):
         self.assertEqual(response.data['data']['provider'], 'google')
         self.assertIn('accounts.google.com', response.data['data']['auth_url'])
     
-    @patch('django.conf.settings.SOCIALACCOUNT_PROVIDERS')
-    def test_oauth_url_github_success(self, mock_providers):
+    def test_oauth_url_github_success(self):
         """Test successful GitHub OAuth URL generation"""
-        # Mock the settings
-        mock_providers.__getitem__.return_value = {
-            'APP_ID': 'test-github-client-id',
-            'SCOPE': ['read:user', 'user:email']
-        }
-        
         url = reverse('users:oauth_url', kwargs={'provider': 'github'})
         response = self.client.get(url)
         

@@ -1,41 +1,23 @@
 """
-CI-specific settings for TaskManager project.
+CI/CD settings for GitHub Actions
 """
-from .test_settings import *
 
-# Override database settings for CI
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'testdb',
-        'USER': 'testuser',
-        'PASSWORD': 'testpassword',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
-}
-
-# CI-specific settings
-SECRET_KEY = 'a-test-secret-key-for-ci'
-DEBUG = False
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
-
-# Disable email backend for CI
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-
-# Disable external services
-GOOGLE_OAUTH2_CLIENT_ID = 'test-client-id'
-GOOGLE_OAUTH2_CLIENT_SECRET = 'test-client-secret'
+from .settings import *
+from datetime import timedelta
+import tempfile
 
 # Use SQLite for CI/CD (faster and no external dependencies)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': ':memory:',  # Use in-memory database for faster tests
+        'OPTIONS': {
+            'timeout': 20,  # Increase timeout for in-memory DB
+        }
     }
 }
 
-# Celery settings for CI/CD
+# Celery settings for CI/CD (if you use Celery)
 CELERY_TASK_ALWAYS_EAGER = True  # Run tasks synchronously during tests
 CELERY_TASK_EAGER_PROPAGATES = True
 
@@ -56,59 +38,106 @@ LOGGING = {
     },
 }
 
-# Disable MinIO for tests (use mocks instead)
-MINIO_ENDPOINT = 'localhost:9000'
-MINIO_USERNAME = 'test'
-MINIO_PASSWORD = 'test'
-MINIO_USE_HTTPS = False
-MINIO_TEMP_BUCKET = 'test-temp'
-MINIO_PERMANENT_BUCKET = 'test-permanent'
-
-# Mock MinIO Service for CI environment
-class MockMinIOService:
-    """Mock MinIO service for CI environment"""
-    
-    def __init__(self):
-        self.temp_bucket = MINIO_TEMP_BUCKET
-        self.permanent_bucket = MINIO_PERMANENT_BUCKET
-    
-    def ensure_buckets_exist(self):
-        """Mock method - does nothing"""
-        pass
-    
-    def upload_file_temporary(self, file, user_id):
-        """Mock method - returns mock values"""
-        import os
-        import uuid
-        file_extension = os.path.splitext(file.name)[1]
-        object_key = f"temp/{user_id}/{uuid.uuid4()}{file_extension}"
-        return self.temp_bucket, object_key
-    
-    def move_to_permanent(self, temp_bucket, temp_object_key, permanent_object_key):
-        """Mock method - always returns True"""
-        return True
-    
-    def get_presigned_url(self, bucket_name, object_key, expires=3600):
-        """Mock method - returns mock URL"""
-        return f"https://test-minio.example.com/{bucket_name}/{object_key}"
-
-# Override the MinIO service import in CI environment
-import sys
-from unittest.mock import MagicMock
-
-# Create a mock module that replaces the real MinIOService
-mock_minio_module = MagicMock()
-mock_minio_module.MinIOService = MockMinIOService
-
-# Replace the real module with our mock
-sys.modules['services.minio_service'] = mock_minio_module
-
 # Use a simple cache backend for tests
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
     }
 }
 
 # Disable static files collection during tests
-STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage' 
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+# Test-specific settings
+TEST_RUNNER = 'django.test.runner.DiscoverRunner'
+
+# Disable password hashing during tests for speed
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.MD5PasswordHasher',
+]
+
+# Disable debug toolbar and other development tools
+DEBUG = False
+
+# Use in-memory file storage for tests
+DEFAULT_FILE_STORAGE = 'django.core.files.storage.InMemoryStorage'
+MEDIA_ROOT = tempfile.mkdtemp()
+
+# Disable email sending during tests
+EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
+
+# Configure OAuth providers for testing
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'APP_ID': 'test-google-client-id',
+        'APP_SECRET': 'test-google-client-secret',
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        }
+    },
+    'github': {
+        'APP_ID': 'test-github-client-id',
+        'APP_SECRET': 'test-github-client-secret',
+        'SCOPE': [
+            'user:email',
+            'read:user',
+        ],
+    }
+}
+
+# Use simple JWT settings for tests
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'UPDATE_LAST_LOGIN': False,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+    'JWK_URL': None,
+    'LEEWAY': 0,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
+    'JTI_CLAIM': 'jti',
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
+}
+
+# Security settings for CI (fix warnings)
+SECURE_HSTS_SECONDS = 31536000  # 1 year
+SECURE_SSL_REDIRECT = False  # Not needed for CI
+SECRET_KEY = "a-test-secret-key-for-ci-that-is-long-enough-and-random-1234567890abcdefghijklmnopqrstuvwxyz"
+SESSION_COOKIE_SECURE = False  # Not needed for CI
+CSRF_COOKIE_SECURE = False  # Not needed for CI
+
+# Disable password validation during tests for speed
+AUTH_PASSWORD_VALIDATORS = []
+
+# Use faster test settings
+USE_TZ = False  # Disable timezone support for faster tests
+
+# Disable CORS for tests
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = False
+
+# Disable CSRF for tests
+CSRF_COOKIE_SECURE = False
+CSRF_TRUSTED_ORIGINS = []
+
+# Disable sites framework for tests
+SITE_ID = 1 

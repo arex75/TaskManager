@@ -103,7 +103,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 class PasswordResetConfirmSerializer(serializers.Serializer):
     """Serializer for password reset confirmation"""
     token = serializers.UUIDField()
-    new_password = serializers.CharField(validators=[validate_password])
+    new_password = serializers.CharField(validators=[validate_password, validate_password_strength])
     new_password_confirm = serializers.CharField()
     
     def validate(self, attrs):
@@ -116,7 +116,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 class PasswordChangeSerializer(serializers.Serializer):
     """Serializer for password change"""
     old_password = serializers.CharField()
-    new_password = serializers.CharField(validators=[validate_password])
+    new_password = serializers.CharField(validators=[validate_password, validate_password_strength])
     new_password_confirm = serializers.CharField()
     
     def validate(self, attrs):

@@ -125,10 +125,18 @@ class OAuthURLView(APIView):
         """Get OAuth authorization URL"""
         current_site = get_current_site(request)
         
+        # Check if the provider is configured
+        if provider not in settings.SOCIALACCOUNT_PROVIDERS:
+            raise ValidationError('Unsupported OAuth provider')
+        
         if provider == 'google':
-            client_id = settings.SOCIALACCOUNT_PROVIDERS['google']['APP_ID']
+            try:
+                client_id = settings.SOCIALACCOUNT_PROVIDERS['google']['APP_ID']
+                scope = ' '.join(settings.SOCIALACCOUNT_PROVIDERS['google']['SCOPE'])
+            except KeyError:
+                raise ValidationError('Google OAuth not properly configured')
+                
             redirect_uri = f"http://{current_site.domain}/api/auth/oauth/callback/google/"
-            scope = ' '.join(settings.SOCIALACCOUNT_PROVIDERS['google']['SCOPE'])
             
             auth_url = (
                 f"https://accounts.google.com/o/oauth2/v2/auth?"
@@ -140,9 +148,13 @@ class OAuthURLView(APIView):
             )
             
         elif provider == 'github':
-            client_id = settings.SOCIALACCOUNT_PROVIDERS['github']['APP_ID']
+            try:
+                client_id = settings.SOCIALACCOUNT_PROVIDERS['github']['APP_ID']
+                scope = ' '.join(settings.SOCIALACCOUNT_PROVIDERS['github']['SCOPE'])
+            except KeyError:
+                raise ValidationError('GitHub OAuth not properly configured')
+                
             redirect_uri = f"http://{current_site.domain}/api/auth/oauth/callback/github/"
-            scope = ' '.join(settings.SOCIALACCOUNT_PROVIDERS['github']['SCOPE'])
             
             auth_url = (
                 f"https://github.com/login/oauth/authorize?"
