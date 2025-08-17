@@ -180,22 +180,39 @@ class UserRegistrationViewTest(BaseAPITestCase):
     
     def test_user_registration_boundary_values(self):
         """Test user registration with boundary values"""
-        # Test username too short
+        # Test username too short (less than 1 character)
         data = self.valid_data.copy()
-        data['username'] = 'ab'  # Less than 3 characters
+        data['username'] = ''  # Empty username
         response = self.client.post(self.url, data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         
-        # Test username too long
+        # Test username too long (more than 30 characters)
         data = self.valid_data.copy()
         data['username'] = 'a' * 31  # More than 30 characters
         response = self.client.post(self.url, data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         
+        # Test username starting with number (invalid format)
+        data = self.valid_data.copy()
+        data['username'] = '1username'  # Starts with number
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        # Test username with invalid characters
+        data = self.valid_data.copy()
+        data['username'] = 'user@name'  # Contains @ which is not allowed
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        # Test valid username (2 characters is valid according to current rules)
+        data = self.valid_data.copy()
+        data['username'] = 'ab'  # 2 characters - should be valid
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        
         # Test email too long
         data = self.valid_data.copy()
         data['email'] = 'a' * 100 + '@example.com'
-        response = self.client.post(self.url, data)
         # Email with 100 chars + domain is valid (Django EmailField max is 254)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 

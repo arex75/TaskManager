@@ -1,5 +1,5 @@
 from django.test import TestCase, override_settings
-from rest_framework.test import APITestCase, APIClient
+from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
@@ -9,6 +9,9 @@ from apps.users.models import UserRole
 import tempfile
 import shutil
 import os
+
+# Import task models
+from apps.tasks.models import Tag, Task, Subtask, Comment, Attachment, TaskPriority, TaskStatus
 
 User = get_user_model()
 
@@ -40,6 +43,39 @@ class BaseTestCase(TestCase):
         # Test media files setup
         self.test_media_root = tempfile.mkdtemp()
         
+        # Task-specific test data
+        self.tag_data = {
+            'name': 'Test Tag',
+            'color': '#ff0000',
+            'description': 'A test tag'
+        }
+        
+        self.task_data = {
+            'title': 'Test Task',
+            'description': 'A test task description',
+            'priority': TaskPriority.MEDIUM,
+            'status': TaskStatus.TODO,
+        }
+        
+        self.subtask_data = {
+            'title': 'Test Subtask',
+            'description': 'A test subtask description',
+            'priority': TaskPriority.HIGH,
+        }
+        
+        self.comment_data = {
+            'content': 'Test comment content',
+            'is_internal': False,
+        }
+        
+        self.attachment_data = {
+            'original_filename': 'test_file.txt',
+            'file_size': 1024,
+            'file_type': 'TXT',
+            'description': 'Test attachment',
+            'is_public': True,
+        }
+        
     def tearDown(self):
         """Clean up test data"""
         # Clean up test media files
@@ -49,6 +85,13 @@ class BaseTestCase(TestCase):
         """Helper method to create a test user"""
         user_data = self.user_data.copy()
         user_data.update(kwargs)
+        
+        # Make username unique if not provided
+        if 'username' not in kwargs:
+            import uuid
+            user_data['username'] = f"testuser_{uuid.uuid4().hex[:8]}"
+            user_data['email'] = f"test_{uuid.uuid4().hex[:8]}@example.com"
+        
         return User.objects.create_user(**user_data)
     
     def create_admin_user(self, **kwargs):
@@ -56,6 +99,101 @@ class BaseTestCase(TestCase):
         admin_data = self.admin_user_data.copy()
         admin_data.update(kwargs)
         return User.objects.create_user(**admin_data)
+    
+    # Task-related helper methods
+    def create_tag(self, **kwargs):
+        """Helper method to create a test tag"""
+        tag_data = self.tag_data.copy()
+        tag_data.update(kwargs)
+        return Tag.objects.create(**tag_data)
+    
+    def create_task(self, owner=None, **kwargs):
+        """Helper method to create a test task"""
+        if owner is None:
+            owner = self.create_user()
+        
+        task_data = self.task_data.copy()
+        task_data.update(kwargs)
+        task_data['owner'] = owner
+        return Task.objects.create(**task_data)
+    
+    def create_subtask(self, task=None, **kwargs):
+        """Helper method to create a test subtask"""
+        if task is None:
+            task = self.create_task()
+        
+        subtask_data = self.subtask_data.copy()
+        subtask_data.update(kwargs)
+        subtask_data['task'] = task
+        return Subtask.objects.create(**subtask_data)
+    
+    def create_comment(self, author=None, task=None, subtask=None, **kwargs):
+        """Helper method to create a test comment"""
+        if author is None:
+            author = self.create_user()
+        
+        comment_data = self.comment_data.copy()
+        comment_data.update(kwargs)
+        comment_data['author'] = author
+        
+        if task:
+            comment_data['task'] = task
+        elif subtask:
+            comment_data['subtask'] = subtask
+        else:
+            # Create a default task if neither is provided
+            comment_data['task'] = self.create_task(owner=author)
+        
+        return Comment.objects.create(**comment_data)
+    
+    def create_attachment(self, uploaded_by=None, task=None, subtask=None, **kwargs):
+        """Helper method to create a test attachment"""
+        if uploaded_by is None:
+            uploaded_by = self.create_user()
+        
+        attachment_data = self.attachment_data.copy()
+        attachment_data.update(kwargs)
+        attachment_data['uploaded_by'] = uploaded_by
+        
+        if task:
+            attachment_data['task'] = task
+        elif subtask:
+            attachment_data['subtask'] = subtask
+        else:
+            # Create a default task if neither is provided
+            attachment_data['task'] = self.create_task(owner=uploaded_by)
+        
+        return Attachment.objects.create(**attachment_data)
+    
+    def create_task_with_subtasks(self, owner=None, subtask_count=2, **kwargs):
+        """Helper method to create a task with multiple subtasks"""
+        task = self.create_task(owner=owner, **kwargs)
+        subtasks = []
+        for i in range(subtask_count):
+            subtask = self.create_subtask(task=task, title=f'Subtask {i+1}')
+            subtasks.append(subtask)
+        return task, subtasks
+    
+    def create_task_with_comments(self, owner=None, comment_count=3, **kwargs):
+        """Helper method to create a task with multiple comments"""
+        task = self.create_task(owner=owner, **kwargs)
+        comments = []
+        for i in range(comment_count):
+            comment = self.create_comment(task=task, content=f'Comment {i+1}')
+            comments.append(comment)
+        return task, comments
+    
+    def create_task_with_attachments(self, owner=None, attachment_count=2, **kwargs):
+        """Helper method to create a task with multiple attachments"""
+        task = self.create_task(owner=owner, **kwargs)
+        attachments = []
+        for i in range(attachment_count):
+            attachment = self.create_attachment(
+                task=task, 
+                original_filename=f'test_file_{i+1}.txt'
+            )
+            attachments.append(attachment)
+        return task, attachments
 
 class BaseAPITestCase(APITestCase):
     """Base test case for API testing with enhanced functionality"""
@@ -87,9 +225,9 @@ class BaseAPITestCase(APITestCase):
         # Test media files setup
         self.test_media_root = tempfile.mkdtemp()
         
-        # Create test users
-        self.user = self.create_user()
-        self.admin_user = self.create_admin_user()
+        # Create test users with specific usernames for tests
+        self.user = self.create_user(username='testuser', email='test@example.com')
+        self.admin_user = self.create_admin_user(username='adminuser', email='admin@example.com')
         
         # Get tokens for authenticated requests
         self.user_tokens = self.get_tokens_for_user(self.user)
@@ -104,6 +242,13 @@ class BaseAPITestCase(APITestCase):
         """Helper method to create a test user"""
         user_data = self.user_data.copy()
         user_data.update(kwargs)
+        
+        # Only make username unique if not explicitly provided
+        if 'username' not in kwargs:
+            import uuid
+            user_data['username'] = f"testuser_{uuid.uuid4().hex[:8]}"
+            user_data['email'] = f"test_{uuid.uuid4().hex[:8]}@example.com"
+        
         return User.objects.create_user(**user_data)
     
     def create_admin_user(self, **kwargs):
@@ -188,6 +333,101 @@ class BaseAPITestCase(APITestCase):
         user.save()
         return user
     
+    # Task-related helper methods
+    def create_tag(self, **kwargs):
+        """Helper method to create a test tag"""
+        tag_data = self.tag_data.copy()
+        tag_data.update(kwargs)
+        return Tag.objects.create(**tag_data)
+    
+    def create_task(self, owner=None, **kwargs):
+        """Helper method to create a test task"""
+        if owner is None:
+            owner = self.create_user()
+        
+        task_data = self.task_data.copy()
+        task_data.update(kwargs)
+        task_data['owner'] = owner
+        return Task.objects.create(**task_data)
+    
+    def create_subtask(self, task=None, **kwargs):
+        """Helper method to create a test subtask"""
+        if task is None:
+            task = self.create_task()
+        
+        subtask_data = self.subtask_data.copy()
+        subtask_data.update(kwargs)
+        subtask_data['task'] = task
+        return Subtask.objects.create(**subtask_data)
+    
+    def create_comment(self, author=None, task=None, subtask=None, **kwargs):
+        """Helper method to create a test comment"""
+        if author is None:
+            author = self.create_user()
+        
+        comment_data = self.comment_data.copy()
+        comment_data.update(kwargs)
+        comment_data['author'] = author
+        
+        if task:
+            comment_data['task'] = task
+        elif subtask:
+            comment_data['subtask'] = subtask
+        else:
+            # Create a default task if neither is provided
+            comment_data['task'] = self.create_task(owner=author)
+        
+        return Comment.objects.create(**comment_data)
+    
+    def create_attachment(self, uploaded_by=None, task=None, subtask=None, **kwargs):
+        """Helper method to create a test attachment"""
+        if uploaded_by is None:
+            uploaded_by = self.create_user()
+        
+        attachment_data = self.attachment_data.copy()
+        attachment_data.update(kwargs)
+        attachment_data['uploaded_by'] = uploaded_by
+        
+        if task:
+            attachment_data['task'] = task
+        elif subtask:
+            attachment_data['subtask'] = subtask
+        else:
+            # Create a default task if neither is provided
+            attachment_data['task'] = self.create_task(owner=uploaded_by)
+        
+        return Attachment.objects.create(**attachment_data)
+    
+    def create_task_with_subtasks(self, owner=None, subtask_count=2, **kwargs):
+        """Helper method to create a task with multiple subtasks"""
+        task = self.create_task(owner=owner, **kwargs)
+        subtasks = []
+        for i in range(subtask_count):
+            subtask = self.create_subtask(task=task, title=f'Subtask {i+1}')
+            subtasks.append(subtask)
+        return task, subtasks
+    
+    def create_task_with_comments(self, owner=None, comment_count=3, **kwargs):
+        """Helper method to create a task with multiple comments"""
+        task = self.create_task(owner=owner, **kwargs)
+        comments = []
+        for i in range(comment_count):
+            comment = self.create_comment(task=task, content=f'Comment {i+1}')
+            comments.append(comment)
+        return task, comments
+    
+    def create_task_with_attachments(self, owner=None, attachment_count=2, **kwargs):
+        """Helper method to create a task with multiple attachments"""
+        task = self.create_task(owner=owner, **kwargs)
+        attachments = []
+        for i in range(attachment_count):
+            attachment = self.create_attachment(
+                task=task, 
+                original_filename=f'test_file_{i+1}.txt'
+            )
+            attachments.append(attachment)
+        return task, attachments
+    
     def assert_response_format(self, response, expected_status=status.HTTP_200_OK):
         """Helper method to assert standard API response format"""
         self.assertEqual(response.status_code, expected_status)
@@ -214,9 +454,6 @@ class BaseAPITestCase(APITestCase):
                           'has_next', 'has_previous']
         for field in required_fields:
             self.assertIn(field, pagination)
-
-
-
 
 # Test media settings
 TEST_MEDIA_SETTINGS = {

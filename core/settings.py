@@ -15,26 +15,43 @@ from datetime import timedelta
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-MEDIA_URL = '/media/'
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
+
+
+allowed_hosts_str = os.environ.get('ALLOWED_HOSTS', '')
+if allowed_hosts_str:
+    ALLOWED_HOSTS = [host for host in allowed_hosts_str.split(',') if host]
+else:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+
+# OAUTH AND REDIRECT CONFIGURATION:
+GOOGLE_OAUTH2_CLIENT_ID = os.getenv('GOOGLE_OAUTH2_CLIENT_ID')
+GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET')
+
+# --- Frontend Redirect URLs ---
+FRONTEND_LOGIN_SUCCESS_URL = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000/login')
+# This need to be updated
+FRONTEND_COMPLETE_PROFILE_URL = os.getenv('FRONTEND_COMPLETE_PROFILE_URL',"http://localhost:3000/complete-profile-placeholder")
+
+FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL')
+
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND') # For development
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
+
+
+MEDIA_URL = os.environ.get('MEDIA_URL', '/media/')
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-8c^t&1793q$*4pt+dm7v=9+ugmmt45bhy5*48-$$uwk(5q9!-t"
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
-
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-8c^t&1793q$*4pt+dm7v=9+ugmmt45bhy5*48-$$uwk(5q9!-t')
 
 # Application definition
 
@@ -92,14 +109,28 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'A comprehensive task management API',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,  # Better file upload handling
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': True,
+        'displayOperationId': True,
+        'docExpansion': 'list',
+        'filter': True,
+    },
+    'COMPONENT_SCHEMES': {
+        'bearerAuth': {
+            'type': 'http',
+            'scheme': 'bearer',
+            'bearerFormat': 'JWT',
+        }
+    },
+
+    # This part applies the 'bearerAuth' scheme globally to all endpoints.
+    # The lock icon will now appear on all endpoints that require authentication.
+    'SECURITY': [{'bearerAuth': []}],
 }
 
 
-# Add CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # React frontend
-    "http://127.0.0.1:3000",
-]
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -110,10 +141,16 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # OAuth Settings
-SOCIALACCOUNT_PROVIDERS = {
-    'google': {
-        'APP_ID': os.environ.get('GOOGLE_OAUTH_CLIENT_ID', ''),
-        'APP_SECRET': os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', ''),
+SOCIALACCOUNT_PROVIDERS = {}
+
+# Only add OAuth providers if credentials are provided
+google_client_id = os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
+google_client_secret = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET')
+
+if google_client_id and google_client_secret:
+    SOCIALACCOUNT_PROVIDERS['google'] = {
+        'APP_ID': google_client_id,
+        'APP_SECRET': google_client_secret,
         'SCOPE': [
             'profile',
             'email',
@@ -121,16 +158,20 @@ SOCIALACCOUNT_PROVIDERS = {
         'AUTH_PARAMS': {
             'access_type': 'online',
         }
-    },
-    'github': {
-        'APP_ID': os.environ.get('GITHUB_OAUTH_CLIENT_ID', ''),
-        'APP_SECRET': os.environ.get('GITHUB_OAUTH_CLIENT_SECRET', ''),
+    }
+
+github_client_id = os.environ.get('GITHUB_OAUTH_CLIENT_ID')
+github_client_secret = os.environ.get('GITHUB_OAUTH_CLIENT_SECRET')
+
+if github_client_id and github_client_secret:
+    SOCIALACCOUNT_PROVIDERS['github'] = {
+        'APP_ID': github_client_id,
+        'APP_SECRET': github_client_secret,
         'SCOPE': [
             'user:email',
             'read:user',
         ],
     }
-}
 
 # Allauth Settings
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
@@ -141,24 +182,35 @@ SOCIALACCOUNT_EMAIL_REQUIRED = True
 SOCIALACCOUNT_EMAIL_VERIFICATION = 'mandatory'
 
 # Site ID (required for allauth)
-SITE_ID = 1
+SITE_ID = int(os.environ.get('SITE_ID', '1'))
 
-# Email Configuration (for development)
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Console backend for development
-DEFAULT_FROM_EMAIL = 'noreply@taskmanager.com'
-EMAIL_HOST = 'localhost'
-EMAIL_PORT = 1025
-EMAIL_USE_TLS = False
-EMAIL_HOST_USER = ''
-EMAIL_HOST_PASSWORD = ''
+# CORS and CSRF Settings
+cors_origins_str = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if cors_origins_str:
+    CORS_ALLOWED_ORIGINS = [origin for origin in cors_origins_str.split(',') if origin]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:3000",  # React frontend
+        "http://127.0.0.1:3000",
+    ]
 
-# For production, use SMTP backend:
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = 'smtp.gmail.com'  # or your SMTP server
-# EMAIL_PORT = 587
-# EMAIL_USE_TLS = True
-# EMAIL_HOST_USER = 'your-email@gmail.com'
-# EMAIL_HOST_PASSWORD = 'your-app-password'
+csrf_origins_str = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+if csrf_origins_str:
+    CSRF_TRUSTED_ORIGINS = [origin for origin in csrf_origins_str.split(',') if origin]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
+# Email Configuration
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@taskmanager.com')
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '1025'))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'False').lower() == 'true'
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 
 
 
@@ -245,7 +297,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.1/howto/static-files/
 
-STATIC_URL = "static/"
+STATIC_URL = os.environ.get('STATIC_URL', 'static/')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
@@ -257,11 +309,34 @@ AUTH_USER_MODEL = 'users.CustomUser'
 
 # JWT Settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=int(os.environ.get('JWT_ACCESS_TOKEN_LIFETIME_DAYS', '1'))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.environ.get('JWT_REFRESH_TOKEN_LIFETIME_DAYS', '1'))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
+    
+    "ALGORITHM": "HS256",
+    # "SIGNING_KEY": SECRET_KEY, # Uses Django's SECRET_KEY by default
+    "VERIFYING_KEY": None,
+    "AUDIENCE": None,
+    "ISSUER": None,
+    "JWK_URL": None,
+    "LEEWAY": 0,
+
+    "AUTH_HEADER_TYPES": ("Bearer",), # Authorization: Bearer <token>
+    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
+    "USER_ID_FIELD": "id", # From your User model
+    "USER_ID_CLAIM": "user_id",
+
+    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
+    "TOKEN_TYPE_CLAIM": "token_type",
+    "TOKEN_USER_CLASS": "rest_framework_simplejwt.models.TokenUser",
+
+    "JTI_CLAIM": "jti",
+
+    "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
+    "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5), # Not used if ROTATE_REFRESH_TOKENS=True
+    "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1), # Not used if ROTATE_REFRESH_TOKENS=True
 }
 
 # Logging Configuration
@@ -285,19 +360,19 @@ LOGGING = {
         },
         'file': {
             'class': 'logging.FileHandler',
-            'filename': 'logs/django.log',
+            'filename': os.environ.get('LOG_FILE', 'logs/django.log'),
             'formatter': 'verbose',
         },
     },
     'loggers': {
         'apps.config.exception_handler': {
             'handlers': ['console'],
-            'level': 'INFO',  # Default level - can be overridden in test settings
+            'level': os.environ.get('LOG_LEVEL', 'INFO'),  # Default level - can be overridden in test settings
             'propagate': False,
         },
         'django': {
             'handlers': ['console'],
-            'level': 'INFO',
+            'level': os.environ.get('LOG_LEVEL', 'INFO'),
             'propagate': False,
         },
         'django.request': {
@@ -308,6 +383,6 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO',
+        'level': os.environ.get('LOG_LEVEL', 'INFO'),
     },
 }

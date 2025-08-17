@@ -157,6 +157,9 @@ class Subtask(BaseModel):
     )
     estimated_hours = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     actual_hours = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    due_date = models.DateTimeField(null=True, blank=True, help_text='Due date for this subtask')
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Subtask'
@@ -165,6 +168,7 @@ class Subtask(BaseModel):
             models.Index(fields=['completed']),
             models.Index(fields=['priority']),
             models.Index(fields=['progress']),
+            models.Index(fields=['due_date']),
             models.Index(fields=['created_at']),
         ]
         ordering = ['-created_at']
@@ -176,9 +180,23 @@ class Subtask(BaseModel):
         """Mark subtask as completed"""
         self.completed = True
         self.progress = 100
+        self.completed_at = timezone.now()
         self.save()
         # Update parent task progress
         self.task.update_progress(self.task.subtask_progress)
+
+    def start_subtask(self):
+        """Mark subtask as started"""
+        if not self.started_at:
+            self.started_at = timezone.now()
+            self.save()
+
+    @property
+    def is_overdue(self):
+        """Check if subtask is overdue"""
+        if self.due_date and not self.completed:
+            return timezone.now() > self.due_date
+        return False
 
 class Comment(BaseModel):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='comments')
@@ -187,6 +205,8 @@ class Comment(BaseModel):
     content = models.TextField()
     is_internal = models.BooleanField(default=False, help_text='Internal comment visible only to team members', null=True)
     parent_comment = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
+    is_edited = models.BooleanField(default=False)
+    edited_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Comment'
@@ -194,6 +214,7 @@ class Comment(BaseModel):
         indexes = [
             models.Index(fields=['author']),
             models.Index(fields=['created_at']),
+            models.Index(fields=['is_internal']),
         ]
         ordering = ['-created_at']
 
@@ -206,6 +227,12 @@ class Comment(BaseModel):
             target = "None"
         return f"Comment by {self.author.username} on {target}"
 
+    def save(self, *args, **kwargs):
+        if self.pk:  # If this is an update
+            self.is_edited = True
+            self.edited_at = timezone.now()
+        super().save(*args, **kwargs)
+
 class Attachment(BaseModel):
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='attachments')
     task = models.ForeignKey(Task, on_delete=models.CASCADE, null=True, blank=True, related_name='attachments')
@@ -215,6 +242,7 @@ class Attachment(BaseModel):
     file_size = models.PositiveIntegerField(help_text='File size in bytes')
     file_type = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
+    is_public = models.BooleanField(default=True, help_text='Whether this attachment is publicly visible')
 
     class Meta:
         verbose_name = 'Attachment'
@@ -222,6 +250,7 @@ class Attachment(BaseModel):
         indexes = [
             models.Index(fields=['uploaded_by']),
             models.Index(fields=['file_type']),
+            models.Index(fields=['is_public']),
             models.Index(fields=['created_at']),
         ]
         ordering = ['-created_at']

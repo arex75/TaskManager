@@ -11,4 +11,7 @@ urlpatterns = [
     
     # Authentication endpoints
     path('api/auth/', include('apps.users.urls')),
+    
+    # Tasks endpoints
+    path('api/tasks/', include('apps.tasks.urls')),
 ]
