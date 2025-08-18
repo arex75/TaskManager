@@ -42,8 +42,8 @@ class TaskViewSetTest(BaseAPITestCase):
         # Assert response format
         self.assert_response_format(response, status.HTTP_200_OK)
         self.assertTrue(response.data['success'])
-        # Note: The actual response message is "Items retrieved successfully" due to pagination
-        self.assertIn('Items retrieved successfully', response.data['message'])
+        # The response message should match what we specified in the decorator
+        self.assertIn('Tasks retrieved successfully', response.data['message'])
         
         # Assert pagination format
         self.assert_pagination_format(response)

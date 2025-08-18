@@ -13,12 +13,13 @@ class CustomPagination(pagination.PageNumberPagination):
     max_page_size = 100
     page_query_param = 'page'  # Custom page parameter name
 
-    def get_paginated_response(self, data):
+    def get_paginated_response(self, data, message=None):
         """
         Return a paginated response with enhanced metadata.
         
         Args:
             data: The serialized data for the current page
+            message: Custom message for the response (optional)
             
         Returns:
             Response: Formatted response with pagination metadata
@@ -38,6 +39,9 @@ class CustomPagination(pagination.PageNumberPagination):
         # Calculate offset and limit info
         start_index = (current_page - 1) * per_page + 1
         end_index = min(current_page * per_page, total_count)
+        
+        # Use custom message if provided, otherwise use default
+        response_message = message or "Items retrieved successfully"
         
         return Response({
             "success": True,
@@ -59,7 +63,7 @@ class CustomPagination(pagination.PageNumberPagination):
                     "is_last_page": current_page == total_pages,
                 }
             },
-            "message": "Items retrieved successfully",
+            "message": response_message,
             "timestamp": timezone.now().isoformat()
         })
     
@@ -119,7 +123,7 @@ class NoCountPagination(pagination.PageNumberPagination):
     page_size_query_param = 'per_page'
     max_page_size = 100
     
-    def get_paginated_response(self, data):
+    def get_paginated_response(self, data, message=None):
         """
         Return paginated response without total count for performance.
         """
@@ -127,6 +131,9 @@ class NoCountPagination(pagination.PageNumberPagination):
         per_page = self.get_page_size(self.request)
         has_next = self.page.has_next()
         has_previous = self.page.has_previous()
+        
+        # Use custom message if provided, otherwise use default
+        response_message = message or "Items retrieved successfully"
         
         return Response({
             "success": True,
@@ -143,6 +150,6 @@ class NoCountPagination(pagination.PageNumberPagination):
                     "is_last_page": not has_next,
                 }
             },
-            "message": "Items retrieved successfully",
+            "message": response_message,
             "timestamp": timezone.now().isoformat()
         })

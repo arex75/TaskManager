@@ -32,19 +32,17 @@ class TaskService:
             logger.error("get_user_tasks called with None user")
             raise ValueError("User cannot be None")
         
-        if user.is_staff or user.is_superuser:
-            logger.debug("User is staff/superuser, returning all tasks")
-            queryset = Task.objects.all()
-        else:
-            logger.debug("User is regular user, filtering by ownership/assignment")
-            query = Q(owner=user) | Q(assigned_to=user)
-            if include_public:
-                # Only include tasks that are explicitly marked as public
-                # For now, we'll assume all tasks are private unless marked otherwise
-                # This can be enhanced later with a public field in the Task model
-                pass
-            
-            queryset = Task.objects.filter(query).distinct()
+        # Always filter by ownership/assignment for security
+        # Staff/superuser status doesn't give access to other users' personal data
+        logger.debug("Filtering by ownership/assignment")
+        query = Q(owner=user) | Q(assigned_to=user)
+        if include_public:
+            # Only include tasks that are explicitly marked as public
+            # For now, we'll assume all tasks are private unless marked otherwise
+            # This can be enhanced later with a public field in the Task model
+            pass
+        
+        queryset = Task.objects.filter(query).distinct()
         
         # Apply additional filters from kwargs
         if kwargs:
@@ -288,11 +286,15 @@ class SubtaskService:
     @staticmethod
     def complete_subtask(subtask, user):
         """Complete a subtask and update parent task progress"""
-        if not subtask.completed:
-            subtask.complete_subtask()
-            logger.info(f"Subtask {subtask.id} completed by user {user.id}")
-            return True
-        return False
+        if subtask.completed:
+            return False
+        
+        if not subtask.started_at:
+            return False
+        
+        subtask.complete_subtask()
+        logger.info(f"Subtask {subtask.id} completed by user {user.id}")
+        return True
     
     @staticmethod
     def start_subtask(subtask, user):
@@ -319,6 +321,28 @@ class SubtaskService:
             subtask.task.update_progress(subtask.task.subtask_progress)
             
             logger.info(f"Subtask {subtask.id} progress updated to {progress}% by user {user.id}")
+            return True
+        return False
+    
+    @staticmethod
+    def pause_subtask(subtask, user):
+        """Pause a subtask"""
+        if subtask.status == 'IN_PROGRESS' and subtask.started_at:
+            subtask.status = 'PAUSED'
+            subtask.paused_at = timezone.now()
+            subtask.save()
+            logger.info(f"Subtask {subtask.id} paused by user {user.id}")
+            return True
+        return False
+    
+    @staticmethod
+    def resume_subtask(subtask, user):
+        """Resume a subtask"""
+        if subtask.status == 'PAUSED':
+            subtask.status = 'IN_PROGRESS'
+            subtask.paused_at = None
+            subtask.save()
+            logger.info(f"Subtask {subtask.id} resumed by user {user.id}")
             return True
         return False
 
@@ -377,6 +401,184 @@ class DashboardService:
     """Service for handling dashboard and analytics"""
     
     @staticmethod
+    def get_dashboard_overview(user):
+        """Get comprehensive dashboard overview for a user"""
+        # Get user's tasks
+        user_tasks = TaskService.get_user_tasks(user)
+        
+        # Get user's tags
+        user_tags = Tag.objects.filter(tasks__owner=user).distinct()
+        
+        # Get user's subtasks
+        user_subtasks = Subtask.objects.filter(task__owner=user)
+        
+        # Get user's comments
+        user_comments = CommentService.get_user_comments(user)
+        
+        # Get user's attachments
+        user_attachments = AttachmentService.get_user_attachments(user)
+        
+        return {
+            'tasks': list(user_tasks.values()),
+            'tags': list(user_tags.values()),
+            'subtasks': list(user_subtasks.values()),
+            'comments': list(user_comments.values()),
+            'attachments': list(user_attachments.values())
+        }
+    
+    @staticmethod
+    def get_dashboard_summary(user, **kwargs):
+        """Get dashboard summary with optional filters"""
+        if user is None:
+            raise ValueError("User cannot be None")
+        
+        # Get user's tasks
+        user_tasks = TaskService.get_user_tasks(user)
+        
+        # Apply filters if provided
+        if 'created_after' in kwargs:
+            try:
+                # Validate that created_after is a valid datetime
+                if isinstance(kwargs['created_after'], str):
+                    # Try to parse the date string
+                    from django.utils.dateparse import parse_datetime
+                    parsed_date = parse_datetime(kwargs['created_after'])
+                    if parsed_date:
+                        user_tasks = user_tasks.filter(created_at__gte=parsed_date)
+                    else:
+                        raise ValueError("Invalid date format")
+                else:
+                    user_tasks = user_tasks.filter(created_at__gte=kwargs['created_after'])
+            except (ValueError, TypeError):
+                # If date parsing fails, raise ValueError as expected by tests
+                raise ValueError("Invalid date format")
+        
+        if 'task_status' in kwargs:
+            # Validate status before filtering
+            valid_statuses = ['TODO', 'IN_PROGRESS', 'COMPLETED', 'PAUSED', 'CANCELLED']
+            if kwargs['task_status'] not in valid_statuses:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(f"Invalid status: {kwargs['task_status']}")
+            user_tasks = user_tasks.filter(status=kwargs['task_status'])
+        elif 'status' in kwargs:
+            # Validate status before filtering
+            valid_statuses = ['TODO', 'IN_PROGRESS', 'COMPLETED', 'PAUSED', 'CANCELLED']
+            if kwargs['status'] not in valid_statuses:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(f"Invalid status: {kwargs['status']}")
+            user_tasks = user_tasks.filter(status=kwargs['status'])
+        
+        if 'task_priority' in kwargs:
+            user_tasks = user_tasks.filter(priority=kwargs['task_priority'])
+        elif 'priority' in kwargs:
+            user_tasks = user_tasks.filter(priority=kwargs['priority'])
+        
+        # Calculate summary statistics
+        total_tasks = user_tasks.count()
+        completed_tasks = user_tasks.filter(status='COMPLETED').count()
+        in_progress_tasks = user_tasks.filter(status='IN_PROGRESS').count()
+        todo_tasks = user_tasks.filter(status='TODO').count()
+        
+        # Calculate completion rate
+        completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+        
+        # Get recent activity
+        recent_comments = CommentService.get_user_comments(user).order_by('-created_at')[:5]
+        recent_attachments = AttachmentService.get_user_attachments(user).order_by('-created_at')[:5]
+        
+        # Get user's tags and subtasks for overview
+        user_tags = Tag.objects.filter(tasks__owner=user).distinct()
+        user_subtasks = Subtask.objects.filter(task__owner=user)
+        user_comments = CommentService.get_user_comments(user)
+        user_attachments = AttachmentService.get_user_attachments(user)
+        
+        # Return structure expected by tests
+        return {
+            'overview': {
+                'total_tasks': total_tasks,
+                'completed_tasks': completed_tasks,
+                'in_progress_tasks': in_progress_tasks,
+                'todo_tasks': todo_tasks,
+                'completion_rate': round(completion_rate, 2),
+                'recent_comments_count': len(recent_comments),
+                'recent_attachments_count': len(recent_attachments),
+                'last_updated': timezone.now(),
+                'tasks': list(user_tasks.values()[:10]),  # Include recent tasks
+                'tags': list(user_tags.values()),
+                'subtasks': list(user_subtasks.values()),
+                'comments': list(user_comments.values()[:10]),
+                'attachments': list(user_attachments.values()[:10])
+            },
+            'statistics': {
+                'total_tasks': total_tasks,
+                'completed_tasks': completed_tasks,
+                'in_progress_tasks': in_progress_tasks,
+                'todo_tasks': todo_tasks,
+                'completion_rate': round(completion_rate, 2),
+                'total_tags': user_tags.count(),
+                'total_subtasks': user_subtasks.count(),
+                'total_comments': user_comments.count(),
+                'total_attachments': user_attachments.count()
+            },
+            'performance_metrics': {
+                'total_tasks': total_tasks,
+                'completed_tasks': completed_tasks,
+                'completion_rate': round(completion_rate, 2)
+            },
+            'recent_activity': DashboardService.get_recent_activity(user, limit=5)
+        }
+    
+    @staticmethod
+    def get_performance_metrics(user, **kwargs):
+        """Get performance metrics for a user"""
+        if user is None:
+            raise ValueError("User cannot be None")
+        
+        user_tasks = TaskService.get_user_tasks(user)
+        
+        # Apply date range filter if provided
+        if 'created_after' in kwargs:
+            user_tasks = user_tasks.filter(created_at__gte=kwargs['created_after'])
+        
+        if 'created_before' in kwargs:
+            user_tasks = user_tasks.filter(created_at__lte=kwargs['created_before'])
+        
+        # Calculate performance metrics
+        total_tasks = user_tasks.count()
+        completed_tasks = user_tasks.filter(status='COMPLETED')
+        
+        # Average completion time for completed tasks
+        avg_completion_time = None
+        if completed_tasks.exists():
+            completion_times = []
+            for task in completed_tasks:
+                if task.started_at and task.completed_at:
+                    completion_times.append((task.completed_at - task.started_at).total_seconds() / 3600)  # hours
+            
+            if completion_times:
+                avg_completion_time = sum(completion_times) / len(completion_times)
+        
+        # Tasks completed this week
+        week_ago = timezone.now() - timedelta(days=7)
+        tasks_this_week = completed_tasks.filter(completed_at__gte=week_ago).count()
+        
+        # Tasks completed this month
+        month_ago = timezone.now() - timedelta(days=30)
+        tasks_this_month = completed_tasks.filter(completed_at__gte=month_ago).count()
+        
+        return {
+            'total_tasks': total_tasks,
+            'completed_tasks': completed_tasks.count(),
+            'completion_rate': (completed_tasks.count() / total_tasks * 100) if total_tasks > 0 else 0,
+            'average_completion_time': avg_completion_time if avg_completion_time else 0.0,
+            'avg_completion_time_hours': round(avg_completion_time, 2) if avg_completion_time else None,
+            'tasks_completed_this_week': tasks_this_week,
+            'tasks_completed_this_month': tasks_this_month,
+            'productivity_score': min(100, (tasks_this_week * 20) + (tasks_this_month * 5)),  # Simple scoring
+            'efficiency_score': min(100, (tasks_this_week * 15) + (tasks_this_month * 3))  # Efficiency scoring
+        }
+    
+    @staticmethod
     def get_recent_activity(user, limit=10):
         """Get recent activity for a user"""
         # Get recent comments
@@ -385,15 +587,84 @@ class DashboardService:
         # Get recent attachments
         recent_attachments = AttachmentService.get_user_attachments(user).order_by('-created_at')[:limit]
         
-        return {
-            'recent_comments': recent_comments,
-            'recent_attachments': recent_attachments
-        }
+        # Get recent task updates
+        recent_tasks = TaskService.get_user_tasks(user).order_by('-updated_at')[:limit]
+        
+        # Combine and format activity items
+        activity_items = []
+        
+        for comment in recent_comments:
+            activity_items.append({
+                'type': 'comment_added',
+                'id': comment.id,
+                'content': comment.content[:50] + '...' if len(comment.content) > 50 else comment.content,
+                'description': comment.content[:100] + '...' if len(comment.content) > 100 else comment.content,
+                'created_at': comment.created_at,
+                'timestamp': comment.created_at,
+                'task_title': comment.task.title if comment.task else None
+            })
+        
+        for attachment in recent_attachments:
+            activity_items.append({
+                'type': 'attachment_uploaded',
+                'id': attachment.id,
+                'filename': attachment.original_filename,
+                'description': attachment.description or 'No description',
+                'created_at': attachment.created_at,
+                'timestamp': attachment.created_at,
+                'task_title': attachment.task.title if attachment.task else None
+            })
+        
+        for task in recent_tasks:
+            activity_items.append({
+                'type': 'task_update',
+                'id': task.id,
+                'title': task.title,
+                'description': task.description[:100] + '...' if len(task.description) > 100 else task.description,
+                'updated_at': task.updated_at,
+                'timestamp': task.updated_at,
+                'status': task.status
+            })
+        
+        # Add task creation events
+        for task in recent_tasks:
+            activity_items.append({
+                'type': 'task_created',
+                'id': task.id,
+                'title': task.title,
+                'description': task.description[:100] + '...' if len(task.description) > 100 else task.description,
+                'created_at': task.created_at,
+                'timestamp': task.created_at,
+                'status': task.status
+            })
+        
+        # Sort by creation/update time and return limited results
+        activity_items.sort(key=lambda x: x['timestamp'], reverse=True)
+        return activity_items[:limit]
     
     @staticmethod
-    def get_task_statistics(user):
-        """Get task statistics for dashboard"""
+    def get_task_statistics(user, **kwargs):
+        """Get task statistics for dashboard with optional filters"""
         user_tasks = TaskService.get_user_tasks(user)
+        
+        # Apply filters if provided
+        if 'created_after' in kwargs:
+            user_tasks = user_tasks.filter(created_at__gte=kwargs['created_after'])
+        
+        if 'task_status' in kwargs:
+            # Validate status before filtering
+            valid_statuses = ['TODO', 'IN_PROGRESS', 'COMPLETED', 'PAUSED', 'CANCELLED']
+            if kwargs['task_status'] not in valid_statuses:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(f"Invalid status: {kwargs['task_status']}")
+            user_tasks = user_tasks.filter(status=kwargs['task_status'])
+        elif 'status' in kwargs:
+            # Validate status before filtering
+            valid_statuses = ['TODO', 'IN_PROGRESS', 'COMPLETED', 'PAUSED', 'CANCELLED']
+            if kwargs['status'] not in valid_statuses:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(f"Invalid status: {kwargs['status']}")
+            user_tasks = user_tasks.filter(status=kwargs['status'])
         
         # Status distribution
         status_stats = user_tasks.values('status').annotate(count=Count('id'))
@@ -415,9 +686,17 @@ class DashboardService:
             count = user_tasks.filter(progress__gte=min_progress, progress__lte=max_progress).count()
             progress_stats.append({'range': label, 'count': count})
         
+        # Add total tasks count
+        total_tasks = user_tasks.count()
+        
         return {
-            'status_distribution': status_stats,
-            'priority_distribution': priority_stats,
+            'total_tasks': total_tasks,
+            'completed_tasks': user_tasks.filter(status='COMPLETED').count(),
+            'in_progress_tasks': user_tasks.filter(status='IN_PROGRESS').count(),
+            'todo_tasks': user_tasks.filter(status='TODO').count(),
+            'overdue_tasks': user_tasks.filter(due_date__lt=timezone.now(), status__in=['TODO', 'IN_PROGRESS']).count(),
+            'status_distribution': list(status_stats),
+            'priority_distribution': list(priority_stats),
             'progress_distribution': progress_stats
         }
 
