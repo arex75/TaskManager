@@ -13,6 +13,7 @@ class TaskPriority(models.TextChoices):
 class TaskStatus(models.TextChoices):
     TODO = 'TODO', 'To Do'
     IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
+    PAUSED = 'PAUSED', 'Paused'
     REVIEW = 'REVIEW', 'Under Review'
     DONE = 'DONE', 'Done'
     BLOCKED = 'BLOCKED', 'Blocked'
@@ -148,9 +149,10 @@ class Task(BaseModel):
 class Subtask(BaseModel):
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='subtasks')
     title = models.CharField(max_length=255, blank=False, null=False)
-    description = models.TextField(blank=True, null=True)
+    description = models.TextField(max_length=1000, blank=True, null=True)
     completed = models.BooleanField(default=False)
     priority = models.CharField(max_length=10, choices=TaskPriority.choices, default=TaskPriority.MEDIUM)
+    status = models.CharField(max_length=15, choices=TaskStatus.choices, default=TaskStatus.TODO)
     progress = models.IntegerField(
         default=0,
         validators=[MinValueValidator(0), MaxValueValidator(100)]
@@ -160,6 +162,7 @@ class Subtask(BaseModel):
     due_date = models.DateTimeField(null=True, blank=True, help_text='Due date for this subtask')
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    paused_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Subtask'
@@ -180,6 +183,7 @@ class Subtask(BaseModel):
         """Mark subtask as completed"""
         self.completed = True
         self.progress = 100
+        self.status = TaskStatus.DONE
         self.completed_at = timezone.now()
         self.save()
         # Update parent task progress
@@ -188,6 +192,7 @@ class Subtask(BaseModel):
     def start_subtask(self):
         """Mark subtask as started"""
         if not self.started_at:
+            self.status = TaskStatus.IN_PROGRESS
             self.started_at = timezone.now()
             self.save()
 
@@ -202,7 +207,7 @@ class Comment(BaseModel):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='comments')
     task = models.ForeignKey(Task, on_delete=models.CASCADE, null=True, blank=True, related_name='comments')
     subtask = models.ForeignKey(Subtask, on_delete=models.CASCADE, null=True, blank=True, related_name='comments')
-    content = models.TextField()
+    content = models.TextField(max_length=2000)
     is_internal = models.BooleanField(default=False, help_text='Internal comment visible only to team members', null=True)
     parent_comment = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
     is_edited = models.BooleanField(default=False)
@@ -242,7 +247,7 @@ class Attachment(BaseModel):
     file_size = models.PositiveIntegerField(help_text='File size in bytes')
     file_type = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
-    is_public = models.BooleanField(default=True, help_text='Whether this attachment is publicly visible')
+    is_public = models.BooleanField(default=False, help_text='Whether this attachment is publicly visible')
 
     class Meta:
         verbose_name = 'Attachment'

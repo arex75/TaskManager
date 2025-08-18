@@ -419,14 +419,14 @@ class TaskStatusTest(BaseTestCase):
     def test_task_status_choices(self):
         """Test task status choices"""
         statuses = [choice[0] for choice in TaskStatus.choices]
-        expected_statuses = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE', 'BLOCKED', 'CANCELLED']
+        expected_statuses = ['TODO', 'IN_PROGRESS', 'PAUSED', 'REVIEW', 'DONE', 'BLOCKED', 'CANCELLED']
         
         self.assertEqual(statuses, expected_statuses)
     
     def test_task_status_labels(self):
         """Test task status labels"""
         status_labels = [choice[1] for choice in TaskStatus.choices]
-        expected_labels = ['To Do', 'In Progress', 'Under Review', 'Done', 'Blocked', 'Cancelled']
+        expected_labels = ['To Do', 'In Progress', 'Paused', 'Under Review', 'Done', 'Blocked', 'Cancelled']
         
         self.assertEqual(status_labels, expected_labels)
 
