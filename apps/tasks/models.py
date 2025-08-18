@@ -207,7 +207,7 @@ class Comment(BaseModel):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='comments')
     task = models.ForeignKey(Task, on_delete=models.CASCADE, null=True, blank=True, related_name='comments')
     subtask = models.ForeignKey(Subtask, on_delete=models.CASCADE, null=True, blank=True, related_name='comments')
-    content = models.TextField()
+    content = models.TextField(max_length=2000)
     is_internal = models.BooleanField(default=False, help_text='Internal comment visible only to team members', null=True)
     parent_comment = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
     is_edited = models.BooleanField(default=False)

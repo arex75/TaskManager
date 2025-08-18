@@ -370,6 +370,16 @@ class CommentService:
     def can_delete_comment(comment, user):
         """Check if user can delete a comment"""
         return comment.author == user or user.is_staff
+    
+    @staticmethod
+    def get_comments_by_task(task_id, user):
+        """Get comments for a specific task"""
+        return CommentService.get_user_comments(user).filter(task_id=task_id)
+    
+    @staticmethod
+    def get_comments_by_subtask(subtask_id, user):
+        """Get comments for a specific subtask"""
+        return CommentService.get_user_comments(user).filter(subtask_id=subtask_id)
 
 
 class AttachmentService:
