@@ -120,12 +120,13 @@ class AttachmentServiceTest(BaseTestCase):
         public_task = self.create_task(owner=self.user, title='Public Task')
         public_attachment = self.create_attachment(task=public_task, uploaded_by=self.user, original_filename='public_file.txt')
         
-        # Another user should see attachments on public tasks
+        # Another user should NOT see attachments on tasks they don't own/aren't assigned to
+        # (even if the attachment is marked as public, they can only see public attachments from their own tasks)
         other_user = self.create_user(username='otheruser', email='other@example.com')
         other_user_attachments = AttachmentService.get_user_attachments(other_user)
         
-        # Should include attachments on public tasks
-        self.assertIn(public_attachment, other_user_attachments)
+        # Should NOT include attachments on tasks they don't have access to
+        self.assertNotIn(public_attachment, other_user_attachments)
     
     def test_can_edit_attachment_uploader(self):
         """Test that attachment uploader can edit their own attachment"""
@@ -276,11 +277,9 @@ class AttachmentServiceTest(BaseTestCase):
         
         attachments = AttachmentService.get_user_attachments(new_user)
         
-        # New user should see public attachments but no private ones
-        # The attachment from setUp is public by default
-        self.assertEqual(attachments.count(), 1)
-        # Verify it's the public attachment
-        self.assertTrue(all(att.is_public for att in attachments))
+        # New user should see no attachments initially
+        # The attachment from setUp is now private by default
+        self.assertEqual(attachments.count(), 0)
         
         # Test with very long filenames (within database limits)
         long_filename = 'A' * 250 + '.txt'  # Long but valid filename
@@ -431,12 +430,12 @@ class AttachmentServiceTest(BaseTestCase):
             is_public=False
         )
         
-        # Another user should see public attachments
+        # Another user should NOT see public attachments from tasks they don't own/aren't assigned to
         other_user = self.create_user(username='otheruser', email='other@example.com')
         other_user_attachments = AttachmentService.get_user_attachments(other_user)
         
-        # Should include public attachments
-        self.assertIn(public_attachment, other_user_attachments)
+        # Should NOT include public attachments from tasks they don't have access to
+        self.assertNotIn(public_attachment, other_user_attachments)
         
         # Should not include private attachments
         self.assertNotIn(private_attachment, other_user_attachments)

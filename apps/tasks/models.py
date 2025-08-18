@@ -247,7 +247,7 @@ class Attachment(BaseModel):
     file_size = models.PositiveIntegerField(help_text='File size in bytes')
     file_type = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
-    is_public = models.BooleanField(default=True, help_text='Whether this attachment is publicly visible')
+    is_public = models.BooleanField(default=False, help_text='Whether this attachment is publicly visible')
 
     class Meta:
         verbose_name = 'Attachment'

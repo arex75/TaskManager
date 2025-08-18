@@ -364,11 +364,15 @@ class CommentService:
     @staticmethod
     def can_edit_comment(comment, user):
         """Check if user can edit a comment"""
+        if user is None:
+            return False
         return comment.author == user or user.is_staff
     
     @staticmethod
     def can_delete_comment(comment, user):
         """Check if user can delete a comment"""
+        if user is None:
+            return False
         return comment.author == user or user.is_staff
     
     @staticmethod
@@ -394,7 +398,7 @@ class AttachmentService:
         return Attachment.objects.filter(
             Q(task__owner=user) | Q(task__assigned_to=user) |
             Q(subtask__task__owner=user) | Q(subtask__task__assigned_to=user) |
-            Q(is_public=True)  # Include public attachments
+            Q(is_public=True, task__owner=user) | Q(is_public=True, subtask__task__owner=user)  # Only public attachments from own tasks
         )
     
     @staticmethod
@@ -414,19 +418,22 @@ class AttachmentService:
     @staticmethod
     def can_download_attachment(attachment, user):
         """Check if user can download an attachment"""
-        # Public attachments can be downloaded by anyone
-        if attachment.is_public:
-            return True
-        
-        # None users cannot download private attachments
+        # None users cannot download any attachments
         if user is None:
             return False
+        
+        # Staff users can download any attachment
+        if user.is_staff:
+            return True
+        
+        # Public attachments can be downloaded by anyone (if they exist)
+        if attachment.is_public:
+            return True
         
         # Private attachments can only be downloaded by:
         # - The uploader
         # - Task owner/assigned user
-        # - Staff users
-        if attachment.uploaded_by == user or user.is_staff:
+        if attachment.uploaded_by == user:
             return True
         
         if attachment.task:

@@ -11,8 +11,8 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 
 from .models import Task, Subtask, Comment, Attachment, Tag
 from .serializers import (
-    TaskSerializer, TaskCreateSerializer, TaskUpdateSerializer,
-    SubtaskSerializer, SubtaskCreateSerializer, SubtaskUpdateSerializer,
+    TaskSerializer, TaskCreateSerializer, TaskUpdateSerializer, TaskDetailSerializer,
+    SubtaskSerializer, SubtaskCreateSerializer, SubtaskUpdateSerializer, SubtaskDetailSerializer,
     CommentSerializer, CommentCreateSerializer, CommentUpdateSerializer,
     AttachmentSerializer, AttachmentCreateSerializer, AttachmentUpdateSerializer,
     TagSerializer, TagCreateSerializer, TagUpdateSerializer
