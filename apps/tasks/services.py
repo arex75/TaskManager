@@ -393,18 +393,49 @@ class AttachmentService:
         
         return Attachment.objects.filter(
             Q(task__owner=user) | Q(task__assigned_to=user) |
-            Q(subtask__task__owner=user) | Q(subtask__task__assigned_to=user)
+            Q(subtask__task__owner=user) | Q(subtask__task__assigned_to=user) |
+            Q(is_public=True)  # Include public attachments
         )
     
     @staticmethod
     def can_edit_attachment(attachment, user):
         """Check if user can edit an attachment"""
+        if user is None:
+            return False
         return attachment.uploaded_by == user or user.is_staff
     
     @staticmethod
     def can_delete_attachment(attachment, user):
         """Check if user can delete an attachment"""
+        if user is None:
+            return False
         return attachment.uploaded_by == user or user.is_staff
+    
+    @staticmethod
+    def can_download_attachment(attachment, user):
+        """Check if user can download an attachment"""
+        # Public attachments can be downloaded by anyone
+        if attachment.is_public:
+            return True
+        
+        # None users cannot download private attachments
+        if user is None:
+            return False
+        
+        # Private attachments can only be downloaded by:
+        # - The uploader
+        # - Task owner/assigned user
+        # - Staff users
+        if attachment.uploaded_by == user or user.is_staff:
+            return True
+        
+        if attachment.task:
+            return attachment.task.owner == user or attachment.task.assigned_to == user
+        
+        if attachment.subtask:
+            return attachment.subtask.task.owner == user or attachment.subtask.task.assigned_to == user
+        
+        return False
 
 
 class DashboardService:
